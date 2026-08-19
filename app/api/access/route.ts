@@ -27,8 +27,10 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       email: record.email,
+      tier: record.tier,
       remaining: record.remaining,
       allowance: record.allowance,
+      resetsOn: record.resetsOn,
       stored: storeConfigured,
     })
   } catch (err) {

@@ -26,7 +26,7 @@ const EMAIL_STORAGE_KEY = 'cvsuite_email'
 const TRUNCATION_MARKER = '[[TRUNCATED]]'
 
 // ── Email gate ────────────────────────────────────────────────────────────────
-function EmailGate({ onAccess }: { onAccess: (email: string, remaining: number, allowance: number) => void }) {
+function EmailGate({ onAccess }: { onAccess: (email: string, remaining: number, allowance: number, resetsOn: string) => void }) {
   const [email, setEmail] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
@@ -47,7 +47,7 @@ function EmailGate({ onAccess }: { onAccess: (email: string, remaining: number, 
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Could not verify your email.')
       try { localStorage.setItem(EMAIL_STORAGE_KEY, value) } catch {}
-      onAccess(value, data.remaining, data.allowance)
+      onAccess(value, data.remaining, data.allowance, data.resetsOn || '')
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Something went wrong. Please try again.')
     } finally {
@@ -61,8 +61,9 @@ function EmailGate({ onAccess }: { onAccess: (email: string, remaining: number, 
         Enter your email to get started
       </h2>
       <p style={{ fontSize: '14px', color: '#6B5B5F', lineHeight: 1.6, margin: '0 0 22px 0' }}>
-        These tools are free. Enter your email address and you will get a set of free
-        generations to use across the tailored CV, cover letter and interview prep tools.
+        These tools are free. Enter your email address and you will get a monthly allowance of
+        generations across the tailored CV, cover letter and interview prep tools. Your allowance
+        resets on the 1st of each month.
       </p>
 
       <label htmlFor="gate-email" style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#4A3B3F', marginBottom: '6px' }}>
@@ -393,6 +394,7 @@ export default function Home() {
   const [email, setEmail] = useState('')
   const [remaining, setRemaining] = useState<number | null>(null)
   const [allowance, setAllowance] = useState<number | null>(null)
+  const [resetDate, setResetDate] = useState('')
   const [checkingAccess, setCheckingAccess] = useState(true)
   const [wasTruncated, setWasTruncated] = useState(false)
 
@@ -408,7 +410,7 @@ export default function Home() {
     })
       .then(r => r.ok ? r.json() : null)
       .then(d => {
-        if (d) { setEmail(saved); setRemaining(d.remaining); setAllowance(d.allowance) }
+        if (d) { setEmail(saved); setRemaining(d.remaining); setAllowance(d.allowance); setResetDate(d.resetsOn || '') }
       })
       .catch(() => {})
       .finally(() => setCheckingAccess(false))
@@ -423,7 +425,7 @@ export default function Home() {
       })
       if (!res.ok) return
       const d = await res.json()
-      setRemaining(d.remaining); setAllowance(d.allowance)
+      setRemaining(d.remaining); setAllowance(d.allowance); setResetDate(d.resetsOn || '')
     } catch {}
   }, [])
   const abortRef = useRef<AbortController | null>(null)
@@ -567,7 +569,7 @@ export default function Home() {
         {checkingAccess ? (
           <div style={{ textAlign: 'center', padding: '60px 0', color: '#9E8A8E', fontSize: '14px' }}>Loading…</div>
         ) : !email ? (
-          <EmailGate onAccess={(addr, rem, allow) => { setEmail(addr); setRemaining(rem); setAllowance(allow) }} />
+          <EmailGate onAccess={(addr, rem, allow, reset) => { setEmail(addr); setRemaining(rem); setAllowance(allow); setResetDate(reset) }} />
         ) : (
         <>
 
@@ -579,8 +581,8 @@ export default function Home() {
           {remaining !== null && allowance !== null && (
             <span style={{ fontSize: '13px', fontWeight: 700, color: remaining === 0 ? '#932B46' : remaining <= 3 ? '#B4573F' : '#4A3B3F' }}>
               {remaining === 0
-                ? 'No free generations remaining'
-                : `${remaining} of ${allowance} free generations remaining`}
+                ? `No generations left this month${resetDate ? ` — resets ${resetDate}` : ''}`
+                : `${remaining} of ${allowance} generations remaining this month`}
             </span>
           )}
         </div>
@@ -589,11 +591,12 @@ export default function Home() {
         {remaining === 0 && (
           <div style={{ background: '#FFF', border: '1.5px solid #932B46', borderRadius: '10px', padding: '20px 22px', marginBottom: '20px' }}>
             <p style={{ fontSize: '14px', fontWeight: 700, color: '#932B46', margin: '0 0 8px 0' }}>
-              You have used all your free generations.
+              You have used all your generations for this month.
             </p>
             <p style={{ fontSize: '13px', color: '#6B5B5F', lineHeight: 1.6, margin: '0 0 14px 0' }}>
-              Email us and we will top up your free uses. If you want the full toolkit —
-              master CV, 90-second introductions and the deep interview preparation pack —
+              Your allowance resets{resetDate ? ` on ${resetDate}` : ' on the 1st of next month'}. If
+              you need more before then, email us and we will top you up. If you want the full
+              toolkit — master CV, 90-second introductions and the deep interview preparation pack —
               ask us about the course at the same time.
             </p>
             <a href={`mailto:${ENQUIRIES_EMAIL}?subject=${encodeURIComponent('CV Suite — more free uses')}&body=${encodeURIComponent(`Hello,\n\nCould I please have more free uses on the CV Suite tools?\n\nMy email address is: ${email}\n\nThank you.`)}`}

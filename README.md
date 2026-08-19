@@ -2,9 +2,10 @@
 
 AI career tools built on Next.js 14 and the Anthropic API (Claude Haiku 4.5), deployed on Vercel.
 
-Users enter an email address, receive a set number of free generations, and are told how
-many they have left after each one. When they run out they are pointed at
-`careers@thecachegroup.com.au` to ask for more.
+Users enter an email address, receive a monthly allowance of generations, and are told how
+many they have left after each one. Free users get 5 a month; premium (course) users get 15.
+Allowances reset on the 1st of each month, Melbourne time. When someone runs out they are
+pointed at `careers@thecachegroup.com.au` to ask for more.
 
 ## Tools
 
@@ -65,7 +66,9 @@ Vercel → your project → **Settings** → **Environment Variables**. Add each
 | `RESEND_API_KEY` | Your key from resend.com | Yes |
 | `ADMIN_KEY` | A long random password you invent | Yes |
 | `NOTIFY_EMAIL` | Your email, for new-signup alerts | Optional |
-| `FREE_USES` | Number of free generations, default `10` | Optional |
+| `FREE_USES` | Free generations per month, default `5` | Optional |
+| `PREMIUM_USES` | Premium generations per month, default `15` | Optional |
+| `PREMIUM_EMAILS` | Starting premium addresses, comma separated | Optional |
 | `DAILY_IP_LIMIT` | Daily cap per connection, default `25` | Optional |
 
 Then click **Deploy**.
@@ -80,7 +83,7 @@ Otherwise visitors are asked to log into Vercel before they see anything.
 
 ### 6. Share the URL
 
-Anyone with the link can use it. They enter an email, get their free generations, and are
+Anyone with the link can use it. They enter an email, get their monthly allowance, and are
 counted down from there.
 
 ---
@@ -93,8 +96,9 @@ Open this in your browser, replacing `YOUR_ADMIN_KEY` with the value you set:
 https://your-app.vercel.app/api/admin?key=YOUR_ADMIN_KEY
 ```
 
-This downloads a CSV of every email address, how many generations they have used, and when
-they first and last used the tools. It opens straight in Excel.
+This downloads a CSV of every email address, their tier, how many generations they have used
+this month, their all-time total, and when they first and last used the tools. It opens
+straight in Excel.
 
 To see it on screen instead of downloading:
 
@@ -102,27 +106,46 @@ To see it on screen instead of downloading:
 https://your-app.vercel.app/api/admin?key=YOUR_ADMIN_KEY&format=json
 ```
 
-### Giving someone more uses
+### Putting someone on the premium list
 
-When somebody emails asking for more, open this:
-
-```
-https://your-app.vercel.app/api/admin?key=YOUR_ADMIN_KEY&grant=their@email.com
-```
-
-That resets them to the standard allowance. To give a specific number instead:
+Course enrolees get 15 generations a month instead of 5. Add them like this:
 
 ```
-https://your-app.vercel.app/api/admin?key=YOUR_ADMIN_KEY&grant=their@email.com&uses=20
+https://your-app.vercel.app/api/admin?key=YOUR_ADMIN_KEY&premium=their@email.com
 ```
 
-No redeploy needed — it takes effect immediately.
+Take them off again when the course ends:
+
+```
+https://your-app.vercel.app/api/admin?key=YOUR_ADMIN_KEY&unpremium=their@email.com
+```
+
+See who is currently on the list:
+
+```
+https://your-app.vercel.app/api/admin?key=YOUR_ADMIN_KEY&premiumlist=1
+```
+
+### Giving someone extra generations this month
+
+When somebody emails asking for more before their reset date:
+
+```
+https://your-app.vercel.app/api/admin?key=YOUR_ADMIN_KEY&grant=their@email.com&uses=5
+```
+
+That adds 5 extra generations **for the current month only**. On the 1st they go back to
+their normal tier allowance. Leave `&uses=` off and they get one extra free allowance.
+
+None of these need a redeploy — they take effect immediately.
 
 ---
 
 ## How usage limiting works
 
-- Each email address gets `FREE_USES` generations (10 by default), shared across all three tools
+- Each email address gets a monthly allowance shared across all three tools: `FREE_USES`
+  (5 by default), or `PREMIUM_USES` (15 by default) for anyone on the premium list
+- Allowances reset on the 1st of each month, Melbourne time — not a rolling 30 days
 - A use is **reserved before** the model runs, so nobody can cancel at the last second and keep the output for free
 - A use is **refunded** if the generation fails or is cut short — see below
 - A daily per-connection cap (`DAILY_IP_LIMIT`) stops one person cycling through throwaway addresses

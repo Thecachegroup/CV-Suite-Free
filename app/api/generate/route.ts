@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { PROMPTS, PROMPTS_OVERRIDE } from '@/lib/prompts'
-import { normaliseEmail, isValidEmail, reserveUse, refundUse } from '@/lib/store'
+import { normaliseEmail, isValidEmail, reserveUse, refundUse, resetsOn } from '@/lib/store'
 import { getClientIp } from '@/lib/ip'
 
 export const runtime = 'nodejs'
@@ -84,9 +84,10 @@ export async function POST(req: NextRequest) {
       }
       return NextResponse.json(
         {
-          error: `You have used all ${reservation.allowance} of your free generations.`,
+          error: `You have used all ${reservation.allowance} of your generations for this month. Your allowance resets on ${resetsOn()}.`,
           exhausted: true,
           remaining: 0,
+          resetsOn: resetsOn(),
         },
         { status: 429 }
       )

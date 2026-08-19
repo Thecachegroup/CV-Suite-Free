@@ -1,20 +1,43 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { listUsers, grantUses, normaliseEmail, isValidEmail, DEFAULT_ALLOWANCE, storeConfigured } from '@/lib/store'
+import {
+  listUsers,
+  listPremium,
+  grantUses,
+  setPremium,
+  normaliseEmail,
+  isValidEmail,
+  storeConfigured,
+  FREE_USES,
+  PREMIUM_USES,
+  period,
+  resetsOn,
+} from '@/lib/store'
 
 export const runtime = 'nodejs'
 
 /**
  * Admin endpoint. Guarded by ADMIN_KEY (set in Vercel environment variables).
  *
- *   List everyone who has signed up, as a CSV download:
+ *   Everyone who has signed up, as a CSV download:
  *     /api/admin?key=YOUR_KEY
  *
  *   Same list as JSON in the browser:
  *     /api/admin?key=YOUR_KEY&format=json
  *
- *   Give someone a fresh allowance (this is the "email us for more uses" flow):
- *     /api/admin?key=YOUR_KEY&grant=someone@example.com
- *     /api/admin?key=YOUR_KEY&grant=someone@example.com&uses=20
+ *   Put someone on the premium (course) list — 15 generations a month:
+ *     /api/admin?key=YOUR_KEY&premium=someone@example.com
+ *
+ *   Take them off it again:
+ *     /api/admin?key=YOUR_KEY&unpremium=someone@example.com
+ *
+ *   See who is on the premium list:
+ *     /api/admin?key=YOUR_KEY&premiumlist=1
+ *
+ *   Give someone extra generations for THIS MONTH ONLY (the "email us for
+ *   more" flow). Next month they drop back to their normal allowance:
+ *     /api/admin?key=YOUR_KEY&grant=someone@example.com&uses=5
+ *
+ * None of these need a redeploy. They take effect immediately.
  */
 export async function GET(req: NextRequest) {
   const adminKey = process.env.ADMIN_KEY
@@ -34,33 +57,74 @@ export async function GET(req: NextRequest) {
     )
   }
 
-  // ── Grant more uses ───────────────────────────────────────────────────────
+  // ── Premium list ──────────────────────────────────────────────────────────
+  if (params.get('premiumlist')) {
+    const emails = await listPremium()
+    return NextResponse.json({
+      count: emails.length,
+      monthlyAllowance: PREMIUM_USES,
+      emails,
+    })
+  }
+
+  const premium = normaliseEmail(params.get('premium'))
+  if (premium) {
+    if (!isValidEmail(premium)) {
+      return NextResponse.json({ error: 'That is not a valid email address.' }, { status: 400 })
+    }
+    const record = await setPremium(premium, true)
+    return NextResponse.json({ premium: premium, tier: 'premium', record })
+  }
+
+  const unpremium = normaliseEmail(params.get('unpremium'))
+  if (unpremium) {
+    if (!isValidEmail(unpremium)) {
+      return NextResponse.json({ error: 'That is not a valid email address.' }, { status: 400 })
+    }
+    const record = await setPremium(unpremium, false)
+    return NextResponse.json({ removed: unpremium, tier: 'free', record })
+  }
+
+  // ── Extra generations for this month ──────────────────────────────────────
   const grant = normaliseEmail(params.get('grant'))
   if (grant) {
     if (!isValidEmail(grant)) {
       return NextResponse.json({ error: 'That is not a valid email address.' }, { status: 400 })
     }
-    const uses = Number(params.get('uses') || DEFAULT_ALLOWANCE)
+    const uses = Number(params.get('uses') || FREE_USES)
     if (!Number.isFinite(uses) || uses < 1 || uses > 1000) {
       return NextResponse.json({ error: 'uses must be between 1 and 1000.' }, { status: 400 })
     }
     const record = await grantUses(grant, uses)
-    return NextResponse.json({ granted: grant, uses, record })
+    return NextResponse.json({
+      granted: grant,
+      extraUsesThisMonth: uses,
+      appliesUntil: resetsOn(),
+      record,
+    })
   }
 
   // ── List users ────────────────────────────────────────────────────────────
   const users = await listUsers()
 
   if (params.get('format') === 'json') {
-    return NextResponse.json({ count: users.length, users })
+    return NextResponse.json({
+      month: period(),
+      resetsOn: resetsOn(),
+      freeAllowance: FREE_USES,
+      premiumAllowance: PREMIUM_USES,
+      count: users.length,
+      users,
+    })
   }
 
-  const header = 'Email,Used,Allowance,Remaining,First seen,Last used\n'
+  const header = 'Email,Tier,Used this month,Allowance,Remaining,Used all time,First seen,Last used\n'
   const rows = users
-    .map(u => {
-      const remaining = Math.max(0, u.allowance - u.used)
-      return [u.email, u.used, u.allowance, remaining, u.firstSeen, u.lastUsed].map(csvCell).join(',')
-    })
+    .map(u =>
+      [u.email, u.tier, u.used, u.allowance, u.remaining, u.totalUsed, u.firstSeen, u.lastUsed]
+        .map(csvCell)
+        .join(',')
+    )
     .join('\n')
 
   const stamp = new Date().toISOString().slice(0, 10)
